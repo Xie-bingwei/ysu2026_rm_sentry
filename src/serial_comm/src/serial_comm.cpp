@@ -115,6 +115,7 @@ class Serial_Node: public rclcpp::Node
       imu_pub_->publish(msg_imu);
 
       RCLCPP_DEBUG(this->get_logger(),"[RX gimbal_joint_state] pitch=%.3f yaw=%.3f",rel_pitch,rel_yaw);
+      RCLCPP_DEBUG(this->get_logger(),"[RX imu] roll=%.3f pitch=%.3f yaw=%.3f",abs_roll,abs_pitch,abs_yaw);
     }
 
 
