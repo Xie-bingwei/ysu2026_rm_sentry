@@ -350,16 +350,16 @@ controller_server:
     FollowPath:
       # mpc
       plugin: "mpc_controller::MPCController"
-      horizon: 10              
+      horizon: 40              
       control_dt: 0.05
-      v_des: 1.0
+      v_des: 1.5
       a_max: 2.0
-      v_max: 5.0
+      v_max: 2.0
       q_pos: 10.0
       q_vel: 1.0
       q_terminal_pos: 100.0
       q_terminal_vel: 10.0
-      r_acc: 0.5
+      r_acc: 3.0
       # PID
       # plugin: "pb_omni_pid_pursuit_controller::OmniPidPursuitController"
       translation_kp: 3.0

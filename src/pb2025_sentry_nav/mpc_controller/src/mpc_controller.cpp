@@ -81,7 +81,7 @@ namespace mpc_controller
     void MPCController::cleanup() {RCLCPP_INFO(logger_, "Cleanup MPCController");}
     void MPCController::activate() {RCLCPP_INFO(logger_, "Activate MPCController");}
     void MPCController::deactivate() {RCLCPP_INFO(logger_, "Deactivate MPCController");}
-    void MPCController::setPlan(const nav_msgs::msg::Path &path) {global_plan_ = path;}
+    void MPCController::setPlan(const nav_msgs::msg::Path &path) {global_plan_ = path; s_prev_ = 0.0;}
 
     geometry_msgs::msg::TwistStamped MPCController::computeVelocityCommands(
         const geometry_msgs::msg::PoseStamped &pose,
@@ -160,26 +160,50 @@ namespace mpc_controller
         const std::vector<double> s = cumulativeDistances(plan);
 
         // 找到路径上离机器人最近的点使用s0接收对应弧长
-        double s0 = 0.0, best = 1e18;
-        for (size_t k = 0; k < plan.poses.size(); ++k) {
+        const double back_margin = 0.5;                 // 允许 0.5 m 回退
+        size_t k_begin = 0;
+        while (k_begin + 1 < s.size() && s[k_begin] < s_prev_ - back_margin) ++k_begin;
+
+        double s0 = s_prev_, best = 1e18;
+        for (size_t k = k_begin; k < plan.poses.size(); ++k) {
             const double dx = plan.poses[k].pose.position.x - pose.pose.position.x;
             const double dy = plan.poses[k].pose.position.y - pose.pose.position.y;
             const double d2 = dx * dx + dy * dy;
             if (d2 < best) { best = d2; s0 = s[k]; }
         }
+        s_prev_ = s0;
 
-        // si = s0 + i*T*v_des
+        // 用相邻采样点差分求切向，不再依赖path里恒为 identity的orientation
+        const double ds = 0.05;                    // 差分步长 [m]
+        const double s_total = s.back();
+
         for (int i = 1; i <= N_; ++i) {
+            const double si = s0 + i * dt_ * v_des_;
+
             geometry_msgs::msg::PoseStamped pi;
-            if (!samplePathAt(plan, s, s0 + i * dt_ * v_des_, pi)) {
-                pi = plan.poses.back();          // 超出末端 -> 用终点（末端速度参考自然为 0）
+            bool at_end = false;
+            if (!samplePathAt(plan, s, si, pi)) {
+                pi = plan.poses.back();
+                at_end = true;                     // 标记 已到路径末端
             }
-            const double yaw_i = tf2::getYaw(pi.pose.orientation);
+
+            geometry_msgs::msg::PoseStamped pa, pb;
+            if (!samplePathAt(plan, s, std::max(0.0, si - ds), pa)) {pa = plan.poses.front();}
+            if (!samplePathAt(plan, s, si + ds, pb)) {pb = plan.poses.back();}
+
+            double tx = pb.pose.position.x - pa.pose.position.x;
+            double ty = pb.pose.position.y - pa.pose.position.y;
+            const double tn = std::hypot(tx, ty);
+            if (tn > 1e-6) { tx /= tn; ty /= tn; } else { tx = 1.0; ty = 0.0; }   // 退化时给个安全方向
+
+            // 终点刹车曲线：参考速度必须满足v <= sqrt(2*a*剩余距离)，否则刹不住
+            const double s_remain = std::max(0.0, s_total - si);
+            double v_ref = at_end ? 0.0 : v_des_;
+            v_ref = std::min(v_ref, std::sqrt(2.0 * a_max_.x() * s_remain));
+
             x_ref.segment<4>(4 * (i - 1))
                 << pi.pose.position.x, pi.pose.position.y,
-                // 在路径点参考速度为当前切线方向，其夹角为yawi，则vx = v * cos(yawi), vy = v * sin(yawi)
-                (i < N_ ? v_des_ : 0.0) * std::cos(yaw_i),
-                (i < N_ ? v_des_ : 0.0) * std::sin(yaw_i);
+                v_ref * tx, v_ref * ty;
         }
         return x_ref;
     }

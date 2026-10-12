@@ -57,6 +57,7 @@ namespace mpc_controller
         rclcpp::Logger logger_{rclcpp::get_logger("MPCController")};
         rclcpp::Clock::SharedPtr clock_;
         nav_msgs::msg::Path global_plan_;
+        double s_prev_ = 0.0;
 
         std::unique_ptr<MPC_Model> mpc_model_;
         std::unique_ptr<MPC_Solver> mpc_solver_;

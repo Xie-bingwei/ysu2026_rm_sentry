@@ -1,0 +1,45 @@
+[INFO] [launch]: All log files can be found below /home/xie/ysu2026_rm_sentry/.diag/log/2026-10-12-11-16-27-789961-BW-48
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [create-1]: process started with pid [50]
+[INFO] [rmua19_robot_base-2]: process started with pid [52]
+[INFO] [robot_state_publisher-3]: process started with pid [54]
+[INFO] [parameter_bridge-4]: process started with pid [56]
+[INFO] [ign-5]: process started with pid [58]
+[create-1] [INFO] [1791774987.930519648] [ros_gz_sim]: Requesting list of world names.
+[robot_state_publisher-3] [INFO] [1791774987.943548261] [red_standard_robot1.robot_state_publisher]: got segment armor_0
+[robot_state_publisher-3] [INFO] [1791774987.943664762] [red_standard_robot1.robot_state_publisher]: got segment armor_1
+[robot_state_publisher-3] [INFO] [1791774987.943671355] [red_standard_robot1.robot_state_publisher]: got segment armor_2
+[robot_state_publisher-3] [INFO] [1791774987.943675372] [red_standard_robot1.robot_state_publisher]: got segment armor_3
+[robot_state_publisher-3] [INFO] [1791774987.943678438] [red_standard_robot1.robot_state_publisher]: got segment armor_support_frame_0
+[robot_state_publisher-3] [INFO] [1791774987.943682225] [red_standard_robot1.robot_state_publisher]: got segment armor_support_frame_1
+[robot_state_publisher-3] [INFO] [1791774987.943685381] [red_standard_robot1.robot_state_publisher]: got segment armor_support_frame_2
+[robot_state_publisher-3] [INFO] [1791774987.943688487] [red_standard_robot1.robot_state_publisher]: got segment armor_support_frame_3
+[robot_state_publisher-3] [INFO] [1791774987.943691663] [red_standard_robot1.robot_state_publisher]: got segment base_footprint
+[robot_state_publisher-3] [INFO] [1791774987.943694969] [red_standard_robot1.robot_state_publisher]: got segment chassis
+[robot_state_publisher-3] [INFO] [1791774987.943699568] [red_standard_robot1.robot_state_publisher]: got segment front_industrial_camera
+[robot_state_publisher-3] [INFO] [1791774987.943704247] [red_standard_robot1.robot_state_publisher]: got segment front_industrial_camera_optical_frame
+[robot_state_publisher-3] [INFO] [1791774987.943708425] [red_standard_robot1.robot_state_publisher]: got segment front_left_wheel
+[robot_state_publisher-3] [INFO] [1791774987.943711811] [red_standard_robot1.robot_state_publisher]: got segment front_mid360
+[robot_state_publisher-3] [INFO] [1791774987.943714897] [red_standard_robot1.robot_state_publisher]: got segment front_right_wheel
+[robot_state_publisher-3] [INFO] [1791774987.943717923] [red_standard_robot1.robot_state_publisher]: got segment front_rplidar_a2
+[robot_state_publisher-3] [INFO] [1791774987.943720899] [red_standard_robot1.robot_state_publisher]: got segment gimbal_pitch
+[robot_state_publisher-3] [INFO] [1791774987.943723944] [red_standard_robot1.robot_state_publisher]: got segment gimbal_pitch_odom
+[robot_state_publisher-3] [INFO] [1791774987.943727231] [red_standard_robot1.robot_state_publisher]: got segment gimbal_yaw
+[robot_state_publisher-3] [INFO] [1791774987.943730286] [red_standard_robot1.robot_state_publisher]: got segment gimbal_yaw_odom
+[robot_state_publisher-3] [INFO] [1791774987.943733422] [red_standard_robot1.robot_state_publisher]: got segment light_indicator
+[robot_state_publisher-3] [INFO] [1791774987.943736668] [red_standard_robot1.robot_state_publisher]: got segment rear_left_wheel
+[robot_state_publisher-3] [INFO] [1791774987.943739684] [red_standard_robot1.robot_state_publisher]: got segment rear_right_wheel
+[robot_state_publisher-3] [INFO] [1791774987.943743061] [red_standard_robot1.robot_state_publisher]: got segment speed_monitor
+[ign-5] data: true
+[ign-5] 
+[create-1] [INFO] [1791774988.232046703] [ros_gz_sim]: Requested creation of entity.
+[create-1] [INFO] [1791774988.232095145] [ros_gz_sim]: OK creation of entity.
+[INFO] [ign-5]: process has finished cleanly [pid 58]
+[INFO] [create-1]: process has finished cleanly [pid 50]
+[parameter_bridge-4] [INFO] [1791774988.947220080] [red_standard_robot1.ros_gz_bridge]: Creating GZ->ROS Bridge: [/red_standard_robot1/odometry (ignition.msgs.Odometry) -> /red_standard_robot1/chassis_odometry_gt (nav_msgs/msg/Odometry)] (Lazy 0)
+[parameter_bridge-4] [INFO] [1791774988.949088803] [red_standard_robot1.ros_gz_bridge]: Creating GZ->ROS Bridge: [/world/default/model/red_standard_robot1/joint_state (ignition.msgs.Model) -> /red_standard_robot1/joint_states (sensor_msgs/msg/JointState)] (Lazy 0)
+[parameter_bridge-4] [INFO] [1791774988.949986716] [red_standard_robot1.ros_gz_bridge]: Creating GZ->ROS Bridge: [/world/default/model/red_standard_robot1/link/front_industrial_camera/sensor/front_industrial_camera/image (ignition.msgs.Image) -> /red_standard_robot1/front_industrial_camera/image (sensor_msgs/msg/Image)] (Lazy 0)
+[parameter_bridge-4] [INFO] [1791774988.950319637] [red_standard_robot1.ros_gz_bridge]: Creating GZ->ROS Bridge: [/world/default/model/red_standard_robot1/link/front_rplidar_a2/sensor/front_rplidar_a2/scan (ignition.msgs.LaserScan) -> /red_standard_robot1/rplidar_a2/scan (sensor_msgs/msg/LaserScan)] (Lazy 0)
+[parameter_bridge-4] [INFO] [1791774988.950640976] [red_standard_robot1.ros_gz_bridge]: Creating GZ->ROS Bridge: [/world/default/model/red_standard_robot1/link/front_mid360/sensor/front_mid360_lidar/scan/points (ignition.msgs.PointCloudPacked) -> /red_standard_robot1/livox/lidar (sensor_msgs/msg/PointCloud2)] (Lazy 0)
+[parameter_bridge-4] [INFO] [1791774988.950982093] [red_standard_robot1.ros_gz_bridge]: Creating GZ->ROS Bridge: [/world/default/model/red_standard_robot1/link/front_mid360/sensor/front_mid360_imu/imu (ignition.msgs.IMU) -> /red_standard_robot1/livox/imu (sensor_msgs/msg/Imu)] (Lazy 0)
+[parameter_bridge-4] [INFO] [1791774988.951370610] [red_standard_robot1.ros_gz_bridge]: Creating GZ->ROS Bridge: [/world/default/model/red_standard_robot1/link/front_industrial_camera/sensor/front_industrial_camera/camera_info (ignition.msgs.CameraInfo) -> /red_standard_robot1/front_industrial_camera/camera_info (sensor_msgs/msg/CameraInfo)] (Lazy 0)
