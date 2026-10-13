@@ -57,6 +57,7 @@ namespace mpc_controller
         rclcpp::Logger logger_{rclcpp::get_logger("MPCController")};
         rclcpp::Clock::SharedPtr clock_;
         nav_msgs::msg::Path global_plan_;
+        Eigen::VectorXd v_ref_;            // 2N 参考速度，buildReference 里填
         double s_prev_ = 0.0;
 
         std::unique_ptr<MPC_Model> mpc_model_;
@@ -64,6 +65,7 @@ namespace mpc_controller
         int N_ = 20;                       // 预测步长
         double dt_ = 0.05;                 // 采样时间
         double v_des_ = 1.0;               // 参考速度
+        double a_lat_max_ = 2.0;           // 横向加速度上限(用于曲率限速)
         Eigen::Vector2d a_min_, a_max_;    // 加速度限幅值
         Eigen::Vector2d v_min_, v_max_;    // 速度限幅值
 

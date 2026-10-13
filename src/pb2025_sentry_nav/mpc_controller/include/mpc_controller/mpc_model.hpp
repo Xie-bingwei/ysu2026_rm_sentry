@@ -8,8 +8,8 @@ namespace mpc_controller
     class MPC_Model
     {
         public:
-        static constexpr int kStateDim = 4;     // s=[px, pv, vx, vy]
-        static constexpr int kInputDim = 2;     // u=[ax, ay]
+        static constexpr int kStateDim = 2;     // s=[px, pv]
+        static constexpr int kInputDim = 2;     // u=[vx, vy]
 
         using AType = Eigen::Matrix<double, kStateDim, kStateDim>;
         using BType = Eigen::Matrix<double, kStateDim, kInputDim>;

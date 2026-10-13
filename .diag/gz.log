@@ -1,9 +1,0 @@
-Failed to create directory [/home/xie/.ignition/gazebo/log/2026-10-12T11:15:50.370288767]: Read-only file system
-Failed to generate log directories. No log file will be generated.Error opening log file: /home/xie/.ignition/auto_default.log
-[1;33m[Wrn] [LevelManager.cc:910] [0m[1;33mAttempting to set performer with name [[0m[1;33mred_standard_robot1[0m[1;33m] [0m[1;33m, but the entity could not be found. Another attempt will be made [0m[1;33min the next iteration.[0m
-[1;33m[Wrn] [LevelManager.cc:910] [0m[1;33mAttempting to set performer with name [[0m[1;33mred_standard_robot1[0m[1;33m] [0m[1;33m, but the entity could not be found. Another attempt will be made [0m[1;33min the next iteration.[0m
-X Error of failed request:  GLXBadFBConfig
-  Major opcode of failed request:  149 (GLX)
-  Minor opcode of failed request:  34 ()
-  Serial number of failed request:  29
-  Current serial number in output stream:  30

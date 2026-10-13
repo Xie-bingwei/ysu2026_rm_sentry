@@ -12,16 +12,10 @@ namespace mpc_controller
     MPC_Model::MPC_Model(double dt, int horizon)
      : dt_(dt), N_(horizon)    // 将传入的采样时间和预测步长存入成员变量dt和N_中
     {
-        // 双积分器离散化
-        Ad_.setIdentity();
-        Ad_(0, 2) = dt_;
-        Ad_(1, 3) = dt_;
-
+        // 单积分器: x_{k+1} = x_k + dt * u_k
+        Ad_.setIdentity();                       // 2x2 单位阵
         Bd_.setZero();
-        Bd_(0, 0) = 0.5 * dt_ * dt_;
-        Bd_(1, 1) = 0.5 * dt_ * dt_;
-        Bd_(2, 0) = dt_;
-        Bd_(3, 1) = dt_; 
+        Bd_ = dt_ * Eigen::Matrix2d::Identity(); // 2x2
 
         // 堆叠预测矩阵Phi(Nn * n)
         Phi_.resize(kStateDim * N_, kStateDim);  // 分配4N*4的内存

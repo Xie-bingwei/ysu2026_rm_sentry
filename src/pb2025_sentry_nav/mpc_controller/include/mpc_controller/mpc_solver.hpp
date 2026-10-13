@@ -12,11 +12,11 @@ namespace mpc_controller
     struct MPC_Weights
     {   
         // 状态代价权重Q，Qf(终端代价), 控制代价权重R
-        double q_pos;
-        double q_vel;
-        double q_terminal_pos;
-        double q_terminal_vel;
-        double r_acc;
+        double q_pos;            // 位置跟踪
+        double q_terminal_pos;   // 终端位置
+        double q_vel;            // 速度跟踪(作用在 u 上)
+        double r_rate;           // 加速度平滑 |u_k - u_{k-1}|^2
+        double horizon_decay;    // γ∈(0,1]
     };
     
     class MPC_Solver
@@ -32,19 +32,18 @@ namespace mpc_controller
         // 常量
         const Eigen::MatrixXd& H() {return H_;}             // Nm*Nm
         const Eigen::MatrixXd& Aineq() {return A_;}         // 4Nm*Nm(QP约束A向量)
-        const Eigen::MatrixXd& Sv() {return Sv_;}           // Nm*Nn
         const Eigen::MatrixXd& Q_bar() {return Q_bar_;}     // Nn*Nn
         const Eigen::MatrixXd& R_bar() {return R_bar_;}     // Nm*Nm
 
         // 每拍更新
         // 计算f并写入osqp的q
-        void updateCost(const Eigen::Vector4d &x0, const Eigen::VectorXd &x_ref);
+        void updateCost(const Eigen::Vector2d &x0, const Eigen::Vector2d &v_meas,
+                        const Eigen::VectorXd &p_ref, const Eigen::VectorXd &v_ref);
 
-        // 计算b，并写入osqp的上界u_
-        void computeBounds(
-        const Eigen::Vector4d &x0,
-        const Eigen::Vector2d &u_max, const Eigen::Vector2d &u_min,
-        const Eigen::Vector2d &v_max, const Eigen::Vector2d &v_min);
+        // 计算b，并写入osqp的上界u_, 速度箱式约束用v_meas当作u_{-1}，加速度约束需要
+        void computeBounds(const Eigen::Vector2d &v_meas,
+                           const Eigen::Vector2d &u_max, const Eigen::Vector2d &u_min,
+                           const Eigen::Vector2d &a_max);
 
         const Eigen::VectorXd& f() {return f_;}
 
@@ -68,8 +67,9 @@ namespace mpc_controller
         const MPC_Model &model_;
         MPC_Weights w_;
         int N_;
-        Eigen::MatrixXd Q_bar_, R_bar_, Sv_, H_, A_;
+        Eigen::MatrixXd Q_bar_, R_bar_, H_, A_;
         Eigen::VectorXd f_;
+        Eigen::MatrixXd D_;    // 速度增量算子(D*U)_k = u_k - u_{k-1}, u_{-1}=0
 
         // OSQP
         void setupOSQP();

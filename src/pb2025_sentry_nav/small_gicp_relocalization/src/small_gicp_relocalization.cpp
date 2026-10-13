@@ -152,6 +152,13 @@ void SmallGicpRelocalizationNode::performRegistration()
     return;
   }
 
+  if (!target_ || target_->empty()) {
+     RCLCPP_WARN_ONCE(this->get_logger(),
+       "Prior map not loaded, skip registration (map->odom stays at init_pose).");
+     accumulated_cloud_->clear();
+     return;
+  }
+  
   source_ = small_gicp::voxelgrid_sampling_omp<
     pcl::PointCloud<pcl::PointXYZ>, pcl::PointCloud<pcl::PointCovariance>>(
     *accumulated_cloud_, registered_leaf_size_);

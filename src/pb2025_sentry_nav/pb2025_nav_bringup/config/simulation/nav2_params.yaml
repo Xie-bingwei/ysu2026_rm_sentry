@@ -332,7 +332,7 @@ controller_server:
     odom_topic: odometry
     controller_frequency: 20.0
     min_x_velocity_threshold: 0.001
-    min_y_velocity_threshold: 0.5
+    min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
     failure_tolerance: 0.3
     progress_checker_plugins: ["progress_checker"]
@@ -352,14 +352,15 @@ controller_server:
       plugin: "mpc_controller::MPCController"
       horizon: 40              
       control_dt: 0.05
-      v_des: 1.5
-      a_max: 2.0
-      v_max: 2.0
-      q_pos: 10.0
-      q_vel: 1.0
-      q_terminal_pos: 100.0
-      q_terminal_vel: 10.0
-      r_acc: 3.0
+      v_des: 2.2
+      a_max: 20.0             
+      v_max: 2.4
+      a_lat_max: 25.0
+      q_pos: 100.0
+      q_terminal_pos: 200.0
+      q_vel: 5.0              # 速度跟踪权重
+      r_rate: 5.0             # 加速度平滑权重
+      horizon_decay: 1.0      # 越小会越短视，不能低于0.9
       # PID
       # plugin: "pb_omni_pid_pursuit_controller::OmniPidPursuitController"
       translation_kp: 3.0

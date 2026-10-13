@@ -51,17 +51,18 @@ namespace mpc_controller
         };
 
         // 读MPC模型
-        dt_ = get_d("control_dt", 0.05);    // 20Hz, dt = 1/controller_frequency 
-        N_ = get_i("horizon", 20);          // 20步预测
-        v_des_ = get_d("v_des", 1.0);       // 期望速度
+        dt_ = get_d("control_dt", 0.05);        // 20Hz, dt = 1/controller_frequency 
+        N_ = get_i("horizon", 20);              // 20步预测
+        v_des_ = get_d("v_des", 1.0);           // 期望速度
+        a_lat_max_ = get_d("a_lat_max", 25.0);  // 2.0横向加速度限制来曲率限速
 
         // 读MPC权重参数
         MPC_Weights weights;
-        weights.q_pos = get_d("q_pos", 10.0);
-        weights.q_vel = get_d("q_vel", 1.0);
-        weights.q_terminal_pos = get_d("q_terminal_pos", 100.0);
-        weights.q_terminal_vel = get_d("q_terminal_vel", 10.0);
-        weights.r_acc = get_d("r_acc", 0.5);
+        weights.q_pos = get_d("q_pos", 100.0);
+        weights.q_terminal_pos = get_d("q_terminal_pos", 200.0);
+        weights.q_vel = get_d("q_vel", 5.0);            // 原 q_vel，现在作用在 u 上
+        weights.r_rate = get_d("r_rate", 5.0);          // 原 r_acc
+        weights.horizon_decay = get_d("horizon_decay", 1.0);
 
         // 读速度，加速度约束
         const double a_lim = get_d("a_max", 3.0);
@@ -95,36 +96,33 @@ namespace mpc_controller
             throw nav2_core::PlannerException("MPC solver not initialized");
         }
 
+        v_ref_ = Eigen::VectorXd::Zero(2 * N_);
         const double yaw = tf2::getYaw(pose.pose.orientation);
 
-        /* MPC基于odom系，输出到机器人需要机体系 */
-        // velocity是机体系，先旋到odom，基于yaw二维旋转矩阵
-        Eigen::Vector4d x0;
-        x0 << pose.pose.position.x,          // odom系下px
-              pose.pose.position.y,          // odom py
-              std::cos(yaw) * velocity.linear.x - std::sin(yaw) * velocity.linear.y,    // 机体系下的vx
-              std::sin(yaw) * velocity.linear.x + std::cos(yaw) * velocity.linear.y;    // 机体 vy
+        // 状态只剩位置(odom)
+        const Eigen::Vector2d x0(pose.pose.position.x, pose.pose.position.y);
 
-        // 参考序列
-        const Eigen::VectorXd x_ref = buildReference(pose);
+        // 实测速度转 odom，只喂给加速度约束的起点 u_{-1}
+        // ★ 必须夹到 v_max 内：否则 u_0 >= v_meas - dt*a_max 和 u_0 <= v_max 冲突 -> PRIMAL_INFEASIBLE
+        Eigen::Vector2d v_meas(std::cos(yaw) * velocity.linear.x - std::sin(yaw) * velocity.linear.y,
+                               std::sin(yaw) * velocity.linear.x + std::cos(yaw) * velocity.linear.y);
+        v_meas = v_meas.cwiseMax(-v_max_).cwiseMin(v_max_);
 
-        // 求解
-        mpc_solver_->updateCost(x0, x_ref);
-        mpc_solver_->computeBounds(x0, a_max_, a_min_, v_max_, v_min_);
+        const Eigen::VectorXd p_ref = buildReference(pose);   // 位置参考(2N)，速度参考填进 v_ref_
+
+        mpc_solver_->updateCost(x0, v_meas, p_ref, v_ref_);
+        mpc_solver_->computeBounds(v_meas, v_max_, v_min_, a_max_);
         if (!mpc_solver_->solve()) {
             throw nav2_core::PlannerException("MPC QP failed");
         }
 
-        // u0 -> 速度指令(odom系)
+        // ★ u0 就是 odom 系的期望速度，不再有 x0[2]+dt*u0 那个结构
         const Eigen::Vector2d u0 = mpc_solver_->firstControl();
-        const Eigen::Vector2d v_odom(x0[2] + dt_ * u0.x(),
-                                     x0[3] + dt_ * u0.y());
 
-        // odom -> 机体系，组装输出
         geometry_msgs::msg::TwistStamped cmd_vel;
-        cmd_vel.header = pose.header;        
-        cmd_vel.twist.linear.x =  std::cos(yaw) * v_odom.x() + std::sin(yaw) * v_odom.y();
-        cmd_vel.twist.linear.y = -std::sin(yaw) * v_odom.x() + std::cos(yaw) * v_odom.y();
+        cmd_vel.header = pose.header;
+        cmd_vel.twist.linear.x =  std::cos(yaw) * u0.x() + std::sin(yaw) * u0.y();
+        cmd_vel.twist.linear.y = -std::sin(yaw) * u0.x() + std::cos(yaw) * u0.y();
         cmd_vel.twist.angular.z = 0.0;
 
         return cmd_vel;
@@ -137,7 +135,7 @@ namespace mpc_controller
 
     Eigen::VectorXd MPCController::buildReference(const geometry_msgs::msg::PoseStamped &pose)
     {
-        Eigen::VectorXd x_ref(4 * N_);
+        Eigen::VectorXd x_ref(2 * N_);
         x_ref.setZero();
         
         // 路径转到odom系
@@ -150,7 +148,8 @@ namespace mpc_controller
             if (plan.poses.size() == 1) {   // 单点路径，退化为目标点参考
                 const auto & p = plan.poses.front().pose;
                 for (int i = 0; i < N_; ++i) {
-                    x_ref.segment<4>(4 * i) << p.position.x, p.position.y, 0.0, 0.0;
+                    x_ref.segment<2>(2 * i) << p.position.x, p.position.y;
+                    v_ref_.segment<2>(2 * i) << 0.0, 0.0;
                 }
                 return x_ref;
             }
@@ -177,6 +176,11 @@ namespace mpc_controller
         const double ds = 0.05;                    // 差分步长 [m]
         const double s_total = s.back();
 
+        // 诊断累积量（循环前声明）
+        double v_ref_min   = v_des_;
+        double kappa_max   = 0.0;
+        int    pinned_cnt  = 0;
+
         for (int i = 1; i <= N_; ++i) {
             const double si = s0 + i * dt_ * v_des_;
 
@@ -185,6 +189,7 @@ namespace mpc_controller
             if (!samplePathAt(plan, s, si, pi)) {
                 pi = plan.poses.back();
                 at_end = true;                     // 标记 已到路径末端
+                ++pinned_cnt;                      // 统计被钉在终点的参考点数
             }
 
             geometry_msgs::msg::PoseStamped pa, pb;
@@ -194,19 +199,59 @@ namespace mpc_controller
             double tx = pb.pose.position.x - pa.pose.position.x;
             double ty = pb.pose.position.y - pa.pose.position.y;
             const double tn = std::hypot(tx, ty);
-            if (tn > 1e-6) { tx /= tn; ty /= tn; } else { tx = 1.0; ty = 0.0; }   // 退化时给个安全方向
+            if (tn > 1e-6) { tx /= tn; ty /= tn; } else { tx = 1.0; ty = 0.0; }
 
-            // 终点刹车曲线：参考速度必须满足v <= sqrt(2*a*剩余距离)，否则刹不住
+            // 终点刹车曲线
             const double s_remain = std::max(0.0, s_total - si);
             double v_ref = at_end ? 0.0 : v_des_;
             v_ref = std::min(v_ref, std::sqrt(2.0 * a_max_.x() * s_remain));
 
-            x_ref.segment<4>(4 * (i - 1))
-                << pi.pose.position.x, pi.pose.position.y,
-                v_ref * tx, v_ref * ty;
+            // ★ 曲率限速  v <= sqrt(a_lat_max / kappa)
+            {
+                const double ds_c = 0.3;   // [m] 比切向步长大，抗离散化噪声
+                geometry_msgs::msg::PoseStamped pc1, pc2, pc3;
+                if (!samplePathAt(plan, s, std::max(0.0, si - ds_c), pc1)) pc1 = plan.poses.front();
+                if (!samplePathAt(plan, s, si,                     pc2)) pc2 = plan.poses.back();
+                if (!samplePathAt(plan, s, si + ds_c,              pc3)) pc3 = plan.poses.back();
+
+                const double ax = pc2.pose.position.x - pc1.pose.position.x;
+                const double ay = pc2.pose.position.y - pc1.pose.position.y;
+                const double bx = pc3.pose.position.x - pc2.pose.position.x;
+                const double by = pc3.pose.position.y - pc2.pose.position.y;
+
+                const double la = std::hypot(ax, ay);
+                const double lb = std::hypot(bx, by);
+                const double lc = std::hypot(ax + bx, ay + by);
+                const double cr = ax * by - ay * bx;
+
+                const double kappa = (la * lb * lc > 1e-9)
+                                   ? 2.0 * std::abs(cr) / (la * lb * lc) : 0.0;
+
+                kappa_max = std::max(kappa_max, kappa);        // ★② 累积最大曲率
+
+                if (kappa > 1e-6) {
+                    v_ref = std::min(v_ref, std::sqrt(a_lat_max_ / kappa));
+                }
+            }
+
+            v_ref_min = std::min(v_ref_min, v_ref);            // 累积最小参考速度
+
+            x_ref.segment<2>(2 * (i - 1)) << pi.pose.position.x, pi.pose.position.y;
+            v_ref_.segment<2>(2 * (i - 1)) << v_ref * tx, v_ref * ty;
         }
+
+        // 诊断日志（循环之后、return 之前）
+        RCLCPP_INFO_THROTTLE(logger_, *clock_, 500,
+            "s0=%.2f s_tot=%.2f cover=%.2f | v_ref_min=%.2f v_des=%.2f | "
+            "kappa_max=%.3f (r_min=%.2f m) | pinned=%d/%d",
+            s0, s_total, N_ * dt_ * v_des_,
+            v_ref_min, v_des_,
+            kappa_max, (kappa_max > 1e-6 ? 1.0 / kappa_max : 999.0),
+            pinned_cnt, N_);
+
         return x_ref;
     }
+    
 
     /*以下三个函数为AI从北极熊的转化方式中改过来的*/
     nav_msgs::msg::Path MPCController::transformPlanToOdom(const geometry_msgs::msg::PoseStamped &pose)

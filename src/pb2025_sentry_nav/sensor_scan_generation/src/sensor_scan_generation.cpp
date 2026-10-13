@@ -128,31 +128,41 @@ void SensorScanGenerationNode::publishOdometry(
   out.pose.pose.position.z = origin.z();
   out.pose.pose.orientation = tf2::toMsg(transform.getRotation());
 
+  // 用仿真时间戳算dt(原来是 steady_clock 墙钟，和 TF 的仿真时间不一致)
   static tf2::Transform previous_transform;
-  static auto previous_time = std::chrono::steady_clock::now();
-  const auto current_time = std::chrono::steady_clock::now();
+  static int64_t prev_ns = 0;
+  static tf2::Vector3 v_filt(0, 0, 0);
+  static tf2::Vector3 w_filt(0, 0, 0);
 
-  const double dt =
-    std::chrono::duration_cast<std::chrono::nanoseconds>(current_time - previous_time).count() *
-    1e-9;
+  const int64_t now_ns = stamp.nanoseconds();
+  const double dt = (now_ns - prev_ns) * 1e-9;
 
-  if (dt > 0) {
-    const auto linear_velocity = (transform.getOrigin() - previous_transform.getOrigin()) / dt;
+  // dt 太小 / 太大都跳过测速：宁可保留上一次的值，也不要算出天文数字
+  //    （正常约 2 ms；<1 ms 说明时间戳异常，>0.5 s 说明中间有大间隔）
+  if (prev_ns != 0 && dt > 1e-3 && dt < 0.5) {
+    const tf2::Vector3 v_raw =
+      (transform.getOrigin() - previous_transform.getOrigin()) / dt;
 
     const tf2::Quaternion q_diff =
       transform.getRotation() * previous_transform.getRotation().inverse();
-    const auto angular_velocity = q_diff.getAxis() * q_diff.getAngle() / dt;
+    const tf2::Vector3 w_raw = q_diff.getAxis() * q_diff.getAngle() / dt;
 
-    out.twist.twist.linear.x = linear_velocity.x();
-    out.twist.twist.linear.y = linear_velocity.y();
-    out.twist.twist.linear.z = linear_velocity.z();
-    out.twist.twist.angular.x = angular_velocity.x();
-    out.twist.twist.angular.y = angular_velocity.y();
-    out.twist.twist.angular.z = angular_velocity.z();
+    // 一阶低通：k ≈ 2π·f_c·dt
+    //    本节点约 450 Hz，k=0.1 对应 f_c ≈ 7 Hz
+    const double k = 0.2;
+    v_filt += (v_raw - v_filt) * k;
+    w_filt += (w_raw - w_filt) * k;
+
+    out.twist.twist.linear.x = v_filt.x();
+    out.twist.twist.linear.y = v_filt.y();
+    out.twist.twist.linear.z = v_filt.z();
+    out.twist.twist.angular.x = w_filt.x();
+    out.twist.twist.angular.y = w_filt.y();
+    out.twist.twist.angular.z = w_filt.z();
   }
 
   previous_transform = transform;
-  previous_time = current_time;
+  prev_ns = now_ns;
 
   pub_chassis_odometry_->publish(out);
 }

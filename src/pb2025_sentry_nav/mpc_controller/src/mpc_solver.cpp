@@ -1,44 +1,48 @@
 #include "mpc_controller/mpc_solver.hpp"
+#include <algorithm>
+#include <cmath>
 
 namespace mpc_controller
 {
     MPC_Solver::MPC_Solver(const MPC_Model &model, const MPC_Weights &w)
      : model_(model), w_(w), N_(model.horizon())   
     {
-        const int n = N_ * 4;    // 堆叠状态维度
-        const int m = N_ * 2;    // 堆叠控制维度
-        const auto &Gamma = model.Gamma();
+        const int n = N_ * 2;    // 堆叠状态维度(只有位置)
+        const int m = N_ * 2;    // 堆叠控制维度(速度)
+        const auto &Gamma = model_.Gamma();
 
-        // Q_bar -> blkdiag[Q,Q,Q......,QN]
-        Eigen::Matrix4d Q = Eigen::Vector4d(w_.q_pos, w_.q_pos, w_.q_vel, w_.q_vel).asDiagonal();  // asDiagonal()将向量作为对角阵使用
-        Eigen::Matrix4d QN = Eigen::Vector4d(w_.q_terminal_pos, w_.q_terminal_pos, w_.q_terminal_vel, w_.q_terminal_vel).asDiagonal();
+        // Q_bar = blkdiag[q_pos*I2, ..., q_terminal_pos*I2]，带 γ^i 衰减
+        const double gam = std::clamp(w_.horizon_decay, 1e-3, 1.0);
         Q_bar_ = Eigen::MatrixXd::Zero(n, n);
-        for(int i = 0; i < N_; ++i) 
-            Q_bar_.block<4, 4>(4 * i, 4 * i) = (i == N_ - 1) ? QN : Q;
-
-        // R_bar -> blkdiag[R,R,R......,R]Q_bar_
-        Eigen::Matrix2d R = Eigen::Vector2d(w_.r_acc, w_.r_acc).asDiagonal();
-        R_bar_ = Eigen::MatrixXd::Zero(m , m);
-        for(int i = 0; i < N_; ++i)
-            R_bar_.block<2, 2>(2 * i, 2 * i) = R;
-
-        //  Sv = [[0,0,1,0],    
-        //        [0,0,0,1]] ⊗ I_N, 从堆叠态抽出vx,xy
-        Sv_ = Eigen::MatrixXd::Zero(m, n);
         for(int i = 0; i < N_; ++i) {
-            Sv_(2 * i, 4 * i + 2) = 1.0;
-            Sv_(2 * i + 1, 4 * i + 3) = 1.0;
+            const double d = std::pow(gam, static_cast<double>(i));
+            const double q = (i == N_ - 1) ? w_.q_terminal_pos : w_.q_pos;
+            Q_bar_.block<2, 2>(2 * i, 2 * i) = (q * d) * Eigen::Matrix2d::Identity();
         }
 
-        // H = 2(Gamma^T*Q_bar_*Gamma + R_bar_)
-        H_ = 2 * (Gamma.transpose() * Q_bar_ * Gamma + R_bar_);
+        // R_bar = q_vel * I，跟踪参考速度
+        R_bar_ = Eigen::MatrixXd::Zero(m, m);
+        for(int i = 0; i < N_; ++i)
+            R_bar_.block<2, 2>(2 * i, 2 * i) = w_.q_vel * Eigen::Matrix2d::Identity();
 
-        // A = [I,-I,Sv_*Gamma, -Sv_*Gamma]
+        // D: 块双对角，D(0,0)=I, D(k,k)=I, D(k,k-1)=-I
+        D_ = Eigen::MatrixXd::Zero(m, m);
+        for(int k = 0; k < N_; ++k) {
+            D_.block<2, 2>(2 * k, 2 * k) = Eigen::Matrix2d::Identity();
+            if(k > 0) D_.block<2, 2>(2 * k, 2 * (k - 1)) = -Eigen::Matrix2d::Identity();
+        }
+
+        // H = 2*(Gamma^T*Q_bar*Gamma + R_bar + r_rate*D^T*D)
+        //      Gamma 每个非零块都是 dt*I2，所以 H 仍然对称正定，OSQP 只读上三角
+        H_ = 2 * (Gamma.transpose() * Q_bar_ * Gamma + R_bar_
+                  + w_.r_rate * D_.transpose() * D_);
+
+        // A = [ I ; -I ; D ; -D ]   速度箱式 + 加速度(增量)约束
         A_ = Eigen::MatrixXd::Zero(8 * N_, m);
-        A_.topRows(2 * N_) = Eigen::MatrixXd::Identity(m , m);
-        A_.block(2 * N_, 0, 2 * N_, m) = -Eigen::MatrixXd::Identity(m, m);
-        A_.block(4 * N_, 0, 2 * N_, m) = Sv_ * Gamma;
-        A_.block(6 * N_, 0, 2 * N_, m) = -Sv_ * Gamma;
+        A_.topRows(2 * N_)              =  Eigen::MatrixXd::Identity(m, m);
+        A_.block(2 * N_, 0, 2 * N_, m)  = -Eigen::MatrixXd::Identity(m, m);
+        A_.block(4 * N_, 0, 2 * N_, m)  =  D_;
+        A_.block(6 * N_, 0, 2 * N_, m)  = -D_;
 
         setupOSQP();
     }
@@ -133,39 +137,49 @@ namespace mpc_controller
             throw std::runtime_error("MPC_Solver: osqp_setup failed");
     }
     
-    void MPC_Solver::updateCost(const Eigen::Vector4d &x0, const Eigen::VectorXd &x_ref)
+    void MPC_Solver::updateCost(const Eigen::Vector2d &x0, const Eigen::Vector2d &v_meas,
+                                const Eigen::VectorXd &p_ref, const Eigen::VectorXd &v_ref)
     {
-        // E = Phi * x0 - X_ref,     f = 2 * Gamma^T * Q_bar * E
-        const Eigen::VectorXd E = model_.Phi() * x0 - x_ref;
-        f_ = 2.0 * model_.Gamma().transpose() * Q_bar_ * E;
+        // E = Phi*x0 - p_ref
+        const Eigen::VectorXd E = model_.Phi() * x0 - p_ref;
+        // u_{-1} = v_meas 是常数项，从 D*U 里挪到 f
+        Eigen::VectorXd c = Eigen::VectorXd::Zero(numVars());
+        c.head<2>() = v_meas;
 
-        // 写入osqp
+        // f = 2*Gamma^T*Q_bar*E - 2*R_bar*v_ref - 2*r_rate*D^T*c
+        f_ = 2.0 * model_.Gamma().transpose() * Q_bar_ * E
+           - 2.0 * R_bar_ * v_ref
+           - 2.0 * w_.r_rate * D_.transpose() * c;
+
         for(int i = 0; i < numVars(); ++i)
             q_[i] = f_[i];
         osqp_update_lin_cost(work_, q_.data());
     }
     
     void MPC_Solver::computeBounds(
-        const Eigen::Vector4d &x0,
+        const Eigen::Vector2d &v_meas,
         const Eigen::Vector2d &u_max, const Eigen::Vector2d &u_min,
-        const Eigen::Vector2d &v_max, const Eigen::Vector2d &v_min)
+        const Eigen::Vector2d &a_max)
     {
-        Eigen::Map<Eigen::VectorXd> b(u_.data(), numCons());
-        
-        // 加速度(输入)约束，segment<2>(i)，从i位置连续取2个向量块
-        for(int i = 0; i < N_; ++i) {
-            b.segment<2>(2 * i) = u_max;               // 令前2N_个元素为u_max
-            b.segment<2>(2 * N_ + 2 * i) = -u_min;     // 令2N_ - 4N_个元素为u_min
-        }
+        const double dt = model_.dt();
+        const Eigen::Vector2d du = dt * a_max;      // 每拍允许的速度变化量
 
-        // 速度约束
-        Eigen::VectorXd SvPhix0 = Sv_ * (model_.Phi() * x0);
+        Eigen::Map<Eigen::VectorXd> b(u_.data(), numCons());
+
         for(int i = 0; i < N_; ++i) {
-            // 左边是2*1向量，右边也需注意使用2*1(SvPhix0是2N*1)
-            b.segment<2>(4 * N_ + 2 * i) = v_max - SvPhix0.segment<2>(2 * i);
-            b.segment<2>(6 * N_ + 2 * i) = -v_min + SvPhix0.segment<2>(2 * i);
+            // (1)(2) 速度箱式约束  v_min <= u_i <= v_max
+            b.segment<2>(2 * i)           = u_max;
+            b.segment<2>(2 * N_ + 2 * i)  = -u_min;
+
+            // (3)(4) 加速度约束 |u_i - u_{i-1}| <= dt*a_max,  u_{-1} = v_meas
+            if(i == 0) {
+                b.segment<2>(4 * N_ + 2 * i) =  v_meas + du;   //  u_0 <= v_meas + dt*a_max
+                b.segment<2>(6 * N_ + 2 * i) = -v_meas + du;   // -u_0 <= -v_meas + dt*a_max
+            } else {
+                b.segment<2>(4 * N_ + 2 * i) = du;
+                b.segment<2>(6 * N_ + 2 * i) = du;
+            }
         }
-        
         osqp_update_bounds(work_, l_.data(), u_.data());
     }
 
